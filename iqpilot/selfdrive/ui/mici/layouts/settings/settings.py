@@ -7,6 +7,7 @@ import pyray as rl
 from iqpilot.common.params import Params
 from iqpilot.system.ui.widgets.scroller import NavScroller
 from iqpilot.selfdrive.ui.mici.widgets.stock_button import BigButton
+from iqpilot.selfdrive.ui.mici.layouts.settings.bluepilot import BluePilotLayoutMici
 from iqpilot.selfdrive.ui.mici.layouts.settings.toggles import TogglesLayoutMici
 from iqpilot.selfdrive.ui.mici.layouts.settings.steering import SteeringLayoutMici
 from iqpilot.selfdrive.ui.mici.layouts.settings.cruise import CruiseLayoutMici
@@ -94,6 +95,10 @@ class SettingsLayout(NavScroller):
     steering_btn = SettingsBigButton(tr("steering"), "", gui_app.texture("icons_mici/wheel.png", 64, 64))
     steering_btn.set_click_callback(lambda: gui_app.push_widget(steering_panel))
 
+    bluepilot_panel = BluePilotLayoutMici()
+    bluepilot_btn = SettingsBigButton(tr("BluePilot"), "", gui_app.texture("icons_mici/wheel.png", 64, 64))
+    bluepilot_btn.set_click_callback(lambda: gui_app.push_widget(bluepilot_panel))
+
     cruise_panel = CruiseLayoutMici()
     cruise_btn = CruiseModeButton()
     cruise_btn.set_click_callback(lambda: gui_app.push_widget(cruise_panel))
@@ -143,6 +148,7 @@ class SettingsLayout(NavScroller):
       models_btn,
       software_btn,
       steering_btn,
+      bluepilot_btn,
       cruise_btn,
       visuals_btn,
       display_btn,

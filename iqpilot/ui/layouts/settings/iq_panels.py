@@ -77,6 +77,7 @@ from iqpilot.system.ui.widgets.network import TEAL, NetworkUI
 from iqpilot.system.ui.widgets.network import PanelType as NetworkPanelType
 from iqpilot.system.ui.widgets.option_dialog import MultiOptionDialog
 from iqpilot.system.ui.widgets.scroller_tici import LineSeparator, Scroller
+from iqpilot.ui.layouts.settings.bluepilot import BluePilotLayout
 from iqpilot.ui.onroad.offline_tiles import offline_map_root
 from iqpilot.ui.optional_private import optional_private_ui
 
@@ -1080,6 +1081,7 @@ OP.PanelType = IntEnum(
     "MODELS",
     "CRUISE",
     "STEERING",
+    "BLUEPILOT",
     "VISUALS",
     "NAVIGATION",
     "VEHICLE",
@@ -1138,6 +1140,7 @@ class IQSettingsLayout(OP.SettingsLayout):
       OP.PanelType.SOFTWARE: PanelInfo(tr_noop("Software"), IQSoftwareLayout(), icon=f"{iq_asset}/icon_software.png"),
       OP.PanelType.MODELS: PanelInfo(tr_noop("Models"), ModelsLayout(), icon=f"{iq_asset}/icon_models.png"),
       OP.PanelType.STEERING: PanelInfo(tr_noop("Steering"), SteeringLayout(), icon="icons_mici/wheel.png"),
+      OP.PanelType.BLUEPILOT: PanelInfo(tr_noop("BluePilot"), BluePilotLayout(), icon="icons_mici/wheel.png"),
       OP.PanelType.VISUALS: PanelInfo(tr_noop("Visuals"), VisualsLayout(), icon=f"{iq_asset}/icon_visuals.png"),
       OP.PanelType.VEHICLE: PanelInfo(tr_noop("Vehicle"), VehicleLayout(), icon=f"{iq_asset}/icon_vehicle.png"),
       OP.PanelType.DEVELOPER: PanelInfo(tr_noop("Developer"), IQDeveloperLayout(), icon="icons/shell.png"),

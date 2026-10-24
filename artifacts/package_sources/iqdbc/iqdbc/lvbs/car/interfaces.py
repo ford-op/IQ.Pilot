@@ -80,6 +80,7 @@ def apply_iq_car_config(CI, CP: structs.CarParams, CP_IQ: structs.IQCarParams,
   _apply_tesla_options(CP, CP_IQ, params_dict)
   _apply_creep_assist(CP, CP_IQ, params_dict)
   _apply_toyota_options(CP, CP_IQ, params_dict)
+  _apply_ford_pinion(CP, CP_IQ, params_dict)
 
 
 def _apply_long_tuning(CI, CP: structs.CarParams, CP_IQ: structs.IQCarParams,
@@ -112,6 +113,21 @@ def _apply_creep_assist(CP: structs.CarParams, CP_IQ: structs.IQCarParams, param
 
   if CP_IQ.flags & (SubaruFlagsIQ.STOP_AND_GO | SubaruFlagsIQ.STOP_AND_GO_MANUAL_PARKING_BRAKE):
     CP_IQ.iqSafetyFlags |= SubaruSafetyFlagsIQ.STOP_AND_GO
+
+
+def _apply_ford_pinion(CP: structs.CarParams, CP_IQ: structs.IQCarParams, params_dict: dict[str, str]) -> None:
+  # BluePilot pinion curvature measurement. Bits match ford.h: bit 0 enables, bits 1-4 are the
+  # geometry row. Platforms without a row keep the yaw measurement.
+  if CP.brand != "ford":
+    return
+  from iqdbc.car.ford.values_ext import FORD_PINION_GEOMETRY_INDEX, FORD_PINION_GEOMETRY_SHIFT, FordSafetyFlagsSP
+  enabled = int(params_dict.get("FordPrefSteerAngleCurvature", "0") or "0") == 1
+  if not enabled:
+    return
+  geometry_index = FORD_PINION_GEOMETRY_INDEX.get(CP.carFingerprint)
+  if geometry_index is None:
+    return
+  CP_IQ.iqSafetyFlags |= FordSafetyFlagsSP.STEER_ANGLE_CURVATURE | (geometry_index << FORD_PINION_GEOMETRY_SHIFT)
 
 
 def _apply_toyota_options(CP: structs.CarParams, CP_IQ: structs.IQCarParams, params_dict: dict[str, str]) -> None:

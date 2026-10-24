@@ -17,6 +17,7 @@ _TUNABLES = (
   "IQTeslaTorqueBlend",
   "IQToyotaFactoryLong",
   "ToyotaSnGHack",
+  "FordPrefSteerAngleCurvature",
 )
 
 
