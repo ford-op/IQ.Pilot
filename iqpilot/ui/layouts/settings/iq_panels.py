@@ -15,13 +15,15 @@ from functools import partial
 from pathlib import Path
 
 import pyray as rl
+from iqdbc.bluepilot_lateral.core.values_ext import FORD_PINION_GEOMETRY_INDEX
+from iqdbc.bluepilot_lateral.params.manifest import SETTINGS as BP_LATERAL_SETTINGS
 from iqdbc.car.subaru.values import CAR as SUBARU_CAR
 from iqdbc.car.subaru.values import SubaruFlags
 from iqdbc.car.volkswagen.values import CAR as VOLKSWAGEN_CAR
 from iqdbc.car.volkswagen.values import VolkswagenFlags
 
 from iqpilot.cereal import custom
-from iqpilot.common.params import Params
+from iqpilot.common.params import Params, UnknownKeyName
 from iqpilot.common.turn_guard_settings import get_turn_guards_enabled, reset_turn_guards, set_turn_guards_enabled
 from iqpilot.common.ui_settings import DISPLAY_BRIGHTNESS_VALUES, NO_NUDGE_WARNING, SLEEP_TIMER_VALUES
 from iqpilot.common.swaglog import cloudlog
@@ -1492,7 +1494,146 @@ class VolkswagenSettings(BrandPanel):
     self.curvature_controller.set_visible(is_curvature_car)
     self.smooth_steer.set_visible(is_curvature_car)
 
+_FORD_CURV, _FORD_ANGLE = 0, 1  # FordPrefLateralControl
+_FORD_SETTINGS = {s.key: s for s in BP_LATERAL_SETTINGS}  # ranges and defaults come from the library's manifest
+
+
+@dataclass(frozen=True)
+class _FordRow:
+  key: str
+  title: str
+  description: str
+  mode: int  # shown only in this primary control mode
+  needs: tuple[str, ...] = ()  # toggles that must be on for the row to be editable
+  step: float = 0.05
+
+
+FORD_TUNING_ROWS = (
+  _FordRow("enable_human_turn_detection_curv", tr_noop("Human Turn Detection"),
+           tr_noop("Ease off while the driver is steering through a turn."), _FORD_CURV),
+  _FordRow("lane_change_factor_high_curv", tr_noop("Lane Change Factor"),
+           tr_noop("Scales steering during a lane change. Values under 1.0 reduce it."), _FORD_CURV),
+  _FordRow("enable_lane_positioning_curv", tr_noop("Lane Positioning"),
+           tr_noop("Nudge toward the lane center, with an optional in-lane offset."), _FORD_CURV),
+  _FordRow("custom_path_offset_curv", tr_noop("In-Lane Offset"),
+           tr_noop("Meters of bias inside the lane. Negative is left."), _FORD_CURV, ("enable_lane_positioning_curv",)),
+  _FordRow("enable_lane_full_mode_curv", tr_noop("Lanefull Mode"),
+           tr_noop("Center between the lane lines when they are confident, instead of following the model's path."),
+           _FORD_CURV, ("enable_lane_positioning_curv",)),
+  _FordRow("LC_PID_gain_UI_curv", tr_noop("Centering Gain"),
+           tr_noop("Gain for the lane centering controller."), _FORD_CURV, ("enable_lane_positioning_curv",), step=0.5),
+  _FordRow("custom_profile_curv", tr_noop("Custom Tuning Profile"),
+           tr_noop("Use the predicted curvature blend ratios below instead of the built-in profile."), _FORD_CURV),
+  _FordRow("pc_blend_ratio_low_C_UI_curv", tr_noop("Predicted Blend, Low Curve"),
+           tr_noop("How much predicted curvature is mixed in on gentle curves. 0 follows the plan, 1 follows the prediction."),
+           _FORD_CURV, ("custom_profile_curv",)),
+  _FordRow("pc_blend_ratio_high_C_UI_curv", tr_noop("Predicted Blend, High Curve"),
+           tr_noop("How much predicted curvature is mixed in on sharp curves. 0 follows the plan, 1 follows the prediction."),
+           _FORD_CURV, ("custom_profile_curv",)),
+  _FordRow("FordLowSpeedFactor_ang", tr_noop("Low Speed Factor"),
+           tr_noop("Scales low-speed steering. 1.0 is the default feel."), _FORD_ANGLE, step=0.01),
+  _FordRow("FordHighSpeedFactor_ang", tr_noop("High Speed Factor"),
+           tr_noop("Scales high-speed steering. 1.0 is the default feel."), _FORD_ANGLE, step=0.01),
+  _FordRow("FordHighSpeedDampening_ang", tr_noop("High Speed Straight Factor"),
+           tr_noop("Straight-road response at high speed. Lower it if the car oversteers, raise it if it understeers."),
+           _FORD_ANGLE, step=0.01),
+  _FordRow("lane_change_factor_high_ang", tr_noop("Lane Change Factor"),
+           tr_noop("Scales steering during a lane change. Values over 1.0 boost it."), _FORD_ANGLE),
+  _FordRow("enable_lane_positioning_ang", tr_noop("Lane Positioning"),
+           tr_noop("Nudge toward the lane center, with an optional in-lane offset."), _FORD_ANGLE),
+  _FordRow("custom_path_offset_ang", tr_noop("In-Lane Offset"),
+           tr_noop("Meters of bias inside the lane. Negative is left."), _FORD_ANGLE, ("enable_lane_positioning_ang",), step=0.01),
+  _FordRow("lane_centering_strength_ang", tr_noop("Lane Centering Strength"),
+           tr_noop("How hard the lane-center trim pulls against the model's own path."), _FORD_ANGLE, ("enable_lane_positioning_ang",)),
+)
+
+
+class FordSettings(BrandPanel):
+  """BluePilot lateral (iqdbc/bluepilot_lateral). The tuning rows apply while driving; the lateral switch and
+  the pinion sensor apply the next time the car starts."""
+  def __init__(self):
+    super().__init__()
+    self._seed_unset_defaults()
+
+    self.bp_lateral_off = toggle_item(
+      lambda: tr("Disable BluePilot Lateral"),
+      description=lambda: tr("Send the stock curvature-only command instead of BluePilot's four path signals. " +
+                             "Applies the next time the car starts."),
+      param="disable_BP_lat_UI",
+      enabled=lambda: ui_state.is_offroad(),
+    )
+    self.primary_control = multiple_button_item(
+      lambda: tr("Primary Control"),
+      lambda: tr("Curvature steers with curvature, trimmed by path angle. Angle steers with path angle (in development)."),
+      buttons=[lambda: tr("Curvature"), lambda: tr("Angle")],
+      param="FordPrefLateralControl",
+      inline=False,
+    )
+    self.pinion = toggle_item(
+      lambda: tr("Use Pinion Yaw Sensor"),
+      description=lambda: tr("Measure the turn from the steering pinion angle instead of the RCM yaw sensor, for cars " +
+                             "whose yaw sensor is faulty (\"Turn Exceeds Steering Limit\" warnings, weak curve tracking, " +
+                             "\"Service AdvanceTrac\"). Applies the next time the car starts."),
+      param="FordPrefSteerAngleCurvature",
+      enabled=lambda: ui_state.is_offroad() and self._bp_lateral_on(),
+    )
+    self._tuning = [(row, self._tuning_item(row)) for row in FORD_TUNING_ROWS]
+    self.items = [self.bp_lateral_off, self.primary_control, self.pinion, *(item for _, item in self._tuning)]
+
+  def _tuning_item(self, row: _FordRow):
+    setting = _FORD_SETTINGS[row.key]
+
+    def enabled(row=row):
+      return self._row_enabled(row)
+
+    if setting.type is float:
+      lo, hi = setting.range
+      return option_item(lambda row=row: tr(row.title), row.key, int(round(lo * 100)), int(round(hi * 100)),
+                         description=lambda row=row: tr(row.description), value_change_step=int(round(row.step * 100)),
+                         enabled=enabled, use_float_scaling=True)
+    return toggle_item(lambda row=row: tr(row.title), description=lambda row=row: tr(row.description),
+                       param=row.key, enabled=enabled)
+
+  @staticmethod
+  def _seed_unset_defaults():
+    # toggles read get_bool, which ignores the params_keys.h default: an unset default-on key would show off
+    for setting in BP_LATERAL_SETTINGS:
+      try:
+        if setting.type is bool and setting.default and ui_state.params.get(setting.key) is None:
+          ui_state.params.put_bool(setting.key, True)
+      except UnknownKeyName:
+        pass
+
+  @staticmethod
+  def _platform() -> str:
+    if bundle := ui_state.params.get("CarPlatformBundle"):
+      return bundle.get("platform", "")
+    return ui_state.CP.carFingerprint if ui_state.CP else ""
+
+  @staticmethod
+  def _bp_lateral_on() -> bool:
+    return not ui_state.params.get_bool("disable_BP_lat_UI")
+
+  @staticmethod
+  def _mode() -> int:
+    try:
+      return int(ui_state.params.get("FordPrefLateralControl", return_default=True) or 0)
+    except (TypeError, ValueError, UnknownKeyName):
+      return _FORD_CURV
+
+  def _row_enabled(self, row: _FordRow) -> bool:
+    return self._bp_lateral_on() and all(ui_state.params.get_bool(key) for key in row.needs)
+
+  def update_settings(self):
+    bp_on = self._bp_lateral_on()
+    self.primary_control.action_item.set_enabled(bp_on and not ui_state.engaged)
+    self.pinion.set_visible(self._platform() in FORD_PINION_GEOMETRY_INDEX)
+    mode = self._mode()
+    for row, item in self._tuning:
+      item.set_visible(row.mode == mode)
+
 _REGISTRY: dict[str, type[BrandPanel]] = {
+  "ford": FordSettings,
   "subaru": SubaruSettings,
   "tesla": TeslaSettings,
   "toyota": ToyotaSettings,

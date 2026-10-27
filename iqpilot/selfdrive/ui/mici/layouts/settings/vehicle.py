@@ -6,9 +6,11 @@ import unicodedata
 
 import pyray as rl
 
+from iqdbc.bluepilot_lateral.core.values_ext import FORD_PINION_GEOMETRY_INDEX
 from iqpilot.cereal import car
 from iqpilot.selfdrive.car.vehicle_catalog import load_catalog
 from iqpilot.selfdrive.ui.lib.nnff_settings import nnff_availability
+from iqpilot.selfdrive.ui.mici.layouts.settings.iq_widgets import MappedParamToggle
 from iqpilot.selfdrive.ui.mici.widgets.stock_button import BigButton, BigParamControl
 from iqpilot.selfdrive.ui.ui_state import ui_state
 from iqpilot.system.ui.lib.application import gui_app, FontWeight, MousePos
@@ -83,6 +85,10 @@ class VehicleLayoutMici(NavScroller):
     self._vw_smooth_steer = BigParamControl(tr("smooth steering"), "EnableSmoothSteer")
     self._tesla_vtb = BigParamControl(tr("virtual torque blending"), "IQTeslaTorqueBlend")
     self._tesla_fsd_visualization = BigParamControl(tr("FSD visuals"), "IQTeslaFsdVisualization")
+    # BluePilot lateral: the tuning values are on the big settings panel
+    self._ford_bp_off = BigParamControl(tr("disable BluePilot lateral"), "disable_BP_lat_UI")
+    self._ford_primary = MappedParamToggle(tr("primary control"), "FordPrefLateralControl", [tr("curvature"), tr("angle")], [0, 1])
+    self._ford_pinion = BigParamControl(tr("pinion yaw sensor"), "FordPrefSteerAngleCurvature")
     self._hkg_reduced_feedback = BigParamControl(tr("reduced steering feedback (beta)"), "IQHkgReducedTorqueFeedback",
                                                 toggle_callback=self._on_hkg_reduced_feedback)
     self._nnff = BigParamControl(tr("NNFF steering"), "NeuralNetworkFeedForward",
@@ -95,11 +101,18 @@ class VehicleLayoutMici(NavScroller):
       "volkswagen": [self._vw_pq_hca, self._vw_lateral, self._vw_mqb_acc_resume, self._vw_mqb_steering_lockout,
                      self._vw_curvature_controller, self._vw_smooth_steer],
       "tesla": [self._tesla_vtb, self._tesla_fsd_visualization],
+      "ford": [self._ford_bp_off, self._ford_primary, self._ford_pinion],
       "hyundai": [self._hkg_reduced_feedback],
     }
     self._all_brand_widgets = [w for ws in self._brand_widgets.values() for w in ws]
 
     self._scroller.add_widgets([self._vehicle_btn, self._nnff] + self._all_brand_widgets)
+
+  @staticmethod
+  def _platform() -> str:
+    if bundle := ui_state.params.get("CarPlatformBundle"):
+      return bundle.get("platform", "")
+    return ui_state.CP.carFingerprint if ui_state.CP else ""
 
   def _get_current_brand(self) -> str:
     bundle = ui_state.params.get("CarPlatformBundle")
@@ -254,6 +267,8 @@ class VehicleLayoutMici(NavScroller):
         show = show and supports_lateral_when_faulted
       elif w in (self._vw_curvature_controller, self._vw_smooth_steer):
         show = show and is_curvature_car
+      elif w is self._ford_pinion:
+        show = show and self._platform() in FORD_PINION_GEOMETRY_INDEX
       elif w is self._hkg_reduced_feedback:
         show = (show and ui_state.CP is not None and
                 ui_state.CP.steerControlType == car.CarParams.SteerControlType.torque and
@@ -262,8 +277,11 @@ class VehicleLayoutMici(NavScroller):
       if show:
         w.refresh()
     for w in (self._toyota_long, self._subaru_snag, self._subaru_manual, self._tesla_vtb, self._tesla_fsd_visualization,
-              self._hkg_reduced_feedback):
+              self._hkg_reduced_feedback, self._ford_bp_off):
       w.set_enabled(offroad)
+    bp_on = not ui_state.params.get_bool("disable_BP_lat_UI")
+    self._ford_primary.set_enabled(bp_on and not ui_state.engaged)
+    self._ford_pinion.set_enabled(offroad and bp_on)
 
   def _update_state(self):
     super()._update_state()
