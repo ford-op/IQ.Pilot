@@ -5,6 +5,7 @@ from iqdbc.car import ACCELERATION_DUE_TO_GRAVITY, Bus, DT_CTRL, apply_hysteresi
 from iqdbc.car.ford import fordcan
 from iqdbc.car.ford.values import CarControllerParams, FordFlags, CAR
 from iqdbc.car.interfaces import CarControllerBase, V_CRUISE_MAX
+from iqdbc.bluepilot_lateral.hosts.iqpilot.lateral import BluePilotLateral  # BluePilot
 
 LongCtrlState = structs.CarControl.Actuators.LongControlState
 VisualAlert = structs.CarControl.HUDControl.VisualAlert
@@ -38,6 +39,7 @@ class CarController(CarControllerBase):
     super().__init__(dbc_names, CP, CP_IQ)
     self.packer = CANPacker(dbc_names[Bus.pt])
     self.CAN = fordcan.CanBus(CP)
+    self.bp = BluePilotLateral(CP, CP_IQ, self.packer, self.CAN)  # BluePilot
 
     self.apply_curvature_last = 0
     self.anti_overshoot_curvature_last = 0
@@ -52,6 +54,7 @@ class CarController(CarControllerBase):
 
   def update(self, CC, CC_IQ, CS, now_nanos):
     can_sends = []
+    bp_active = self.bp.update(CC_IQ, self.frame)  # BluePilot
 
     actuators = CC.actuators
     hud_control = CC.hudControl
@@ -74,7 +77,10 @@ class CarController(CarControllerBase):
 
     ### lateral control ###
     # send steer msg at 20Hz
-    if (self.frame % CarControllerParams.STEER_STEP) == 0:
+    if bp_active and (self.frame % CarControllerParams.STEER_STEP) == 0:  # BluePilot
+      lat_sends, self.apply_curvature_last = self.bp.step_lateral(CC, CS, actuators, self.apply_curvature_last)
+      can_sends.extend(lat_sends)
+    elif (self.frame % CarControllerParams.STEER_STEP) == 0:
       # Bronco and some other cars consistently overshoot curv requests
       # Apply some deadzone + smoothing convergence to avoid oscillations
       if self.CP.carFingerprint in (CAR.FORD_BRONCO_SPORT_MK1, CAR.FORD_F_150_MK14):
@@ -108,7 +114,9 @@ class CarController(CarControllerBase):
         can_sends.append(fordcan.create_lat_ctl_msg(self.packer, self.CAN, CC.latActive, 0., 0., -self.apply_curvature_last, 0.))
 
     # send lka msg at 33Hz
-    if (self.frame % CarControllerParams.LKA_STEP) == 0:
+    if bp_active and (self.frame % CarControllerParams.LKA_STEP) == 0:  # BluePilot
+      can_sends.append(self.bp.step_lka(CC, hud_control))
+    elif (self.frame % CarControllerParams.LKA_STEP) == 0:
       can_sends.append(fordcan.create_lka_msg(self.packer, self.CAN))
 
     ### longitudinal control ###

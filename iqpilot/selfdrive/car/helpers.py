@@ -113,8 +113,24 @@ def convert_iq_car_control(struct: capnp.lib.capnp._DynamicStructReader) -> stru
   struct_dataclass.useRadarAccel = bool(getattr(struct, "useRadarAccel", False))
   struct_dataclass.radarSetSpeedKph = float(getattr(struct, "radarSetSpeedKph", 0.0))
   struct_dataclass.radarGapBars = int(getattr(struct, "radarGapBars", 0))
+  struct_dataclass.lateralInputs = _convert_lateral_inputs(struct)  # BluePilot
 
   return struct_dataclass
+
+
+def _convert_lateral_inputs(struct) -> structs.LateralInputs:
+  """BluePilot: IQCarControl.lateralInputs, as the library's host_types.LateralInputs."""
+  li = struct.lateralInputs
+  return structs.LateralInputs(
+    valid=li.valid,
+    pathYawRate=list(li.pathYawRate), pathX=list(li.pathX), pathY=list(li.pathY),
+    laneLineLeftX=list(li.laneLineLeftX), laneLineLeftY=list(li.laneLineLeftY),
+    laneLineRightX=list(li.laneLineRightX), laneLineRightY=list(li.laneLineRightY),
+    laneLineProbs=list(li.laneLineProbs), laneLineStds=list(li.laneLineStds),
+    laneChangeState=li.laneChangeState, laneChangeDirection=li.laneChangeDirection,
+    steerRatio=li.steerRatio, stiffnessFactor=li.stiffnessFactor, roll=li.roll,
+    angleOffsetDeg=li.angleOffsetDeg, lateralDelay=li.lateralDelay,
+  )
 
 
 def convert_iq_car_control_compact(struct: capnp.lib.capnp._DynamicStructReader, *, include_leads: bool) -> structs.IQCarControl:
@@ -136,6 +152,7 @@ def convert_iq_car_control_compact(struct: capnp.lib.capnp._DynamicStructReader,
     ) for p in struct.params
   ]
   struct_dataclass.angleOffsetDeg = float(getattr(struct, "angleOffsetDeg", 0.0))
+  struct_dataclass.lateralInputs = _convert_lateral_inputs(struct)  # BluePilot
 
   if include_leads:
     lead_one = struct.leadOne

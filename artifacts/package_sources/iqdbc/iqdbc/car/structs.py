@@ -4,6 +4,7 @@ from typing import dataclass_transform, get_origin
 import os
 import capnp
 from iqdbc.car.common.basedir import BASEDIR
+from iqdbc.bluepilot_lateral.host_types import LateralInputs  # BluePilot: the per-frame inputs controlsd fills
 try:
   from iqpilot.cereal import car
 except ImportError:
@@ -54,6 +55,7 @@ class IQCarParams:
   longitudinalStoppingSpeedOverride: float = auto_field()
   stoppingDecelRateOverride: float = auto_field()
   longActiveWithGasOverride: bool = auto_field()
+  lateralInputsRequired: bool = auto_field()  # BluePilot: controlsd fills IQCarControl.lateralInputs and params
 
   iqLateralNet: 'IQCarParams.LateralNet' = field(default_factory=lambda: IQCarParams.LateralNet())
 
@@ -120,6 +122,7 @@ class IQCarControl:
   useRadarAccel: bool = auto_field()
   radarSetSpeedKph: float = auto_field()
   radarGapBars: int = auto_field()
+  lateralInputs: 'LateralInputs' = field(default_factory=lambda: LateralInputs())  # BluePilot
 
   @auto_dataclass
   class Param:

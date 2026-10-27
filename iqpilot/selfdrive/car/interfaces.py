@@ -11,12 +11,14 @@ import iqpilot.system.sentry as _telemetry
 _ANGLE = _dbc.CarParams.SteerControlType.angle
 
 _TUNABLES = (
+  "FordPrefSteerAngleCurvature",  # BluePilot: startup settings (the panda's safety bits)
   "IQSubaruCreepAssist",
   "IQSubaruCreepAssistManualBrake",
   "IQTeslaFsdVisualization",
   "IQTeslaTorqueBlend",
   "IQToyotaFactoryLong",
   "ToyotaSnGHack",
+  "disable_BP_lat_UI",  # BluePilot
 )
 
 
