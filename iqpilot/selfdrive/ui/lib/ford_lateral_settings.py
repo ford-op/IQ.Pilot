@@ -120,10 +120,16 @@ def read_float(row: FordRow, params) -> float:
     return float(row.default)
 
 
-def step_float(row: FordRow, params, direction: int) -> float:
-  """One step up (direction 1) or down (-1), snapped to the row's step and clamped to its range; written."""
+def choices(row: FordRow) -> list[float]:
+  """Every value the row can take: its range in its steps."""
   lo, hi = row.range
-  steps = round((read_float(row, params) - lo) / row.step) + direction
-  value = min(hi, max(lo, round(lo + steps * row.step, 6)))
-  params.put(row.key, value)
-  return value
+  return [round(lo + i * row.step, 6) for i in range(int(round((hi - lo) / row.step)) + 1)]
+
+
+def snap(row: FordRow, value: float) -> float:
+  """The nearest of the row's values: an older or hand-set value lands on the grid, inside the range."""
+  return min(choices(row), key=lambda c: abs(c - value))
+
+
+def format_value(value: float) -> str:
+  return f"{value:.2f}"

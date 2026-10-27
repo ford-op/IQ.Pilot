@@ -10,7 +10,7 @@ from iqpilot.cereal import car
 from iqpilot.selfdrive.car.vehicle_catalog import load_catalog
 from iqpilot.selfdrive.ui.lib import ford_lateral_settings as ford
 from iqpilot.selfdrive.ui.lib.nnff_settings import nnff_availability
-from iqpilot.selfdrive.ui.mici.layouts.settings.ford_lateral import FordLateralTuningMici
+from iqpilot.selfdrive.ui.mici.layouts.settings.ford_lateral import FordTuningButton
 from iqpilot.selfdrive.ui.mici.layouts.settings.iq_widgets import MappedParamToggle
 from iqpilot.selfdrive.ui.mici.widgets.stock_button import BigButton, BigParamControl
 from iqpilot.selfdrive.ui.ui_state import ui_state
@@ -90,8 +90,7 @@ class VehicleLayoutMici(NavScroller):
     self._ford_bp_off = BigParamControl(tr("disable BluePilot lateral"), "disable_BP_lat_UI")
     self._ford_primary = MappedParamToggle(tr("primary control"), "FordPrefLateralControl", [tr("curvature"), tr("angle")], [0, 1])
     self._ford_pinion = BigParamControl(tr("pinion yaw sensor"), "FordPrefSteerAngleCurvature")
-    self._ford_tuning = BigButton(tr("lateral tuning"))
-    self._ford_tuning.set_click_callback(lambda: gui_app.push_widget(FordLateralTuningMici()))
+    self._ford_tuning = FordTuningButton()
     self._hkg_reduced_feedback = BigParamControl(tr("reduced steering feedback (beta)"), "IQHkgReducedTorqueFeedback",
                                                 toggle_callback=self._on_hkg_reduced_feedback)
     self._nnff = BigParamControl(tr("NNFF steering"), "NeuralNetworkFeedForward",
