@@ -335,6 +335,7 @@ struct IQCarParams @0xd4189b5c8aca9f78 {
   longitudinalStoppingSpeedOverride @5 :Float32;  # m/s; zero keeps the upstream default
   stoppingDecelRateOverride @6 :Float32;          # m/s^3; zero keeps the upstream default
   longActiveWithGasOverride @7 :Bool;             # keep long control active while the driver is on the gas
+  lateralInputsRequired @8 :Bool;                 # BluePilot: controlsd fills IQCarControl.lateralInputs and params
 
   struct LateralNet {
     fuzzyFingerprint @0 :Bool;
@@ -360,6 +361,29 @@ struct IQCarControl @0xdc6c97009c7ba28f {
   useRadarAccel @8 :Bool;        # chill mode + radar active -> pass radar ACS_Sollbeschl as ACC_System payload
   radarSetSpeedKph @9 :Float32;  # OP set speed (km/h) to sync radar ACA_V_Wunsch toward via GRA_Up/Down
   radarGapBars @10 :UInt8;       # OP follow-distance bars to mirror to radar GRA_Zeitluecke
+
+  lateralInputs @11 :LateralInputs;  # BluePilot: per-frame model / vehicle inputs for the Ford lateral
+
+  # BluePilot: bluepilot_lateral's host_types.LateralInputs (HOSTS.md, "Every frame: inputs")
+  struct LateralInputs {
+    valid @0 :Bool;
+    pathYawRate @1 :List(Float32);     # modelV2.orientationRate.z
+    pathX @2 :List(Float32);           # modelV2.position.x
+    pathY @3 :List(Float32);           # modelV2.position.y
+    laneLineLeftX @4 :List(Float32);   # modelV2.laneLines[1]
+    laneLineLeftY @5 :List(Float32);
+    laneLineRightX @6 :List(Float32);  # modelV2.laneLines[2]
+    laneLineRightY @7 :List(Float32);
+    laneLineProbs @8 :List(Float32);
+    laneLineStds @9 :List(Float32);
+    laneChangeState @10 :UInt8;        # modelV2.meta
+    laneChangeDirection @11 :UInt8;
+    steerRatio @12 :Float32;           # vehicleParameters
+    stiffnessFactor @13 :Float32;
+    roll @14 :Float32;
+    angleOffsetDeg @15 :Float32;
+    lateralDelay @16 :Float32;         # lateralDelay.lateralDelay
+  }
 
   struct Param {
     key @0 :Text;
