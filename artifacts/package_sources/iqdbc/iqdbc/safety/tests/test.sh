@@ -10,8 +10,8 @@ source ../../../setup.sh
 rm -f ./libsafety/*.gcda
 scons -j$(nproc) -D
 
-# run safety tests and generate coverage data
-pytest -n8 --ignore-glob=misra/*
+# run safety tests and generate coverage data (and the BluePilot ones, from the bluepilot_lateral subtree)
+pytest -n8 --ignore-glob=misra/* . ../../bluepilot_lateral/safety/tests
 
 if [ "$(uname)" = "Darwin" ]; then
   GCOV_EXEC="/opt/homebrew/opt/llvm@18/bin/llvm-cov gcov"
