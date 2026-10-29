@@ -44,6 +44,7 @@ from iqpilot.selfdrive.iqmodeld.messaging import (
   pick_curvature,
   populate_drive_messages,
   populate_iq_model_reasoning,
+  populate_iq_model_nav_turn,
   populate_iq_model_speed_limit,
   populate_odometry_message,
 )
@@ -571,6 +572,7 @@ class InferenceDaemon:
     self._gpu = WarpContext()
     cloudlog.warning("CL context ready; loading model")
     self._runtime = NeuralEngineState(self._gpu)
+    Params().put_bool("IqModelLoaded", True)
     self._reasoning_wire = ReasoningWire(getattr(self._runtime.model_runner, "reasoning_metadata", {}))
     self._feature_inputs = FeatureInputComposer({**getattr(self._runtime.model_runner, "reasoning_metadata", {}),
                                                 "input_shapes": self._runtime.model_runner.input_shapes})
@@ -722,6 +724,7 @@ class InferenceDaemon:
     iq_msg.iqDriveModelData.turnSignalDirection = self._desire_logic.lane_turn_direction
     iq_msg.iqDriveModelData.lateralEdgeBlock = self._desire_logic.lateral_edge_block
     populate_iq_model_speed_limit(iq_msg.iqDriveModelData, outputs)
+    populate_iq_model_nav_turn(iq_msg.iqDriveModelData, outputs)
     populate_drive_profile_message(iq_msg.iqDriveModelData, self._drive_profile_state)
     populate_iq_model_reasoning(
       iq_msg.iqDriveModelData, outputs, self._reasoning_wire, main_stamp.frame_id, main_stamp.timestamp_eof

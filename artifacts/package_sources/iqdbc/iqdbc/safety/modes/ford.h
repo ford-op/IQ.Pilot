@@ -9,6 +9,7 @@
 #define FORD_BrakeSysFeatures      0x415U   // RX from ABS, for vehicle speed
 #define FORD_EngVehicleSpThrottle2 0x202U   // RX from PCM, for second vehicle speed
 #define FORD_Yaw_Data_FD1          0x91U    // RX from RCM, for yaw rate
+#define FORD_SteeringPinion_Data   0x7EU    // RX from PSCM, optional angle_meas source (BluePilot STEER_ANGLE_CURVATURE)
 #define FORD_Steering_Data_FD1     0x083U   // TX by OP, various driver switches and LKAS/CC buttons
 #define FORD_ACCDATA               0x186U   // TX by OP, ACC controls
 #define FORD_ACCDATA_3             0x18AU   // TX by OP, ACC/TJA user interface
@@ -29,6 +30,9 @@ static uint8_t ford_get_counter(const CANPacket_t *msg) {
   } else if (msg->addr == FORD_Yaw_Data_FD1) {
     // Signal: VehRollYaw_No_Cnt
     cnt = msg->data[5];
+  } else if (msg->addr == FORD_SteeringPinion_Data) {
+    // Signal: StePinAn_No_Cnt (47|4@0+)
+    cnt = (msg->data[5] >> 4) & 0xFU;
   } else {
   }
   return cnt;
@@ -74,6 +78,8 @@ static bool ford_get_quality_flag_valid(const CANPacket_t *msg) {
     valid = ((msg->data[4] >> 5) & 0x3U) == 0x3U;  // VehVActlEng_D_Qf
   } else if (msg->addr == FORD_Yaw_Data_FD1) {
     valid = ((msg->data[6] >> 4) & 0x3U) == 0x3U;  // VehYawWActl_D_Qf
+  } else if (msg->addr == FORD_SteeringPinion_Data) {
+    valid = ((msg->data[5] >> 2) & 0x3U) == 0x3U;  // StePinCompAnEst_D_Qf (3=OK)
   } else {
   }
   return valid;
@@ -93,6 +99,16 @@ static const NativeCurvatureSteeringLimits FORD_STEERING_LIMITS = {
   .max_curvature_error = 100,
   .curvature_error_min_speed = 10.0,
 };
+
+// BluePilot: the Ford 4-signal lateral checks, pinion angle_meas source and angle-mode state, from the
+// bluepilot_lateral subtree. The bindings point the library at IQ's native-curvature names.
+#define BP_HOST_CURVATURE_LIMITS NativeCurvatureSteeringLimits
+#define BP_HOST_CURVATURE_STATE native_curvature_state
+#define BP_HOST_RT_CURVATURE_RATE_CHECK rt_native_curvature_rate_limit_check
+#define BP_HOST_LAT_ALLOWED() is_lat_active()
+#define BP_HOST_SPEED_MISMATCH_CHECK() ((void)0)  // ford_rx_hook runs it on FORD_EngVehicleSpThrottle2
+// cppcheck-suppress misra-c2012-20.1; needs the Ford constants defined above
+#include "iqdbc/bluepilot_lateral/safety/ford.h"
 
 static void ford_rx_hook(const CANPacket_t *msg) {
   if (msg->bus == FORD_MAIN_BUS) {
@@ -117,7 +133,7 @@ static void ford_rx_hook(const CANPacket_t *msg) {
     }
 
     // Update vehicle yaw rate
-    if (msg->addr == FORD_Yaw_Data_FD1) {
+    if ((msg->addr == FORD_Yaw_Data_FD1) && !ford_bp_pinion_curvature) {  // BluePilot: pinion source replaces yaw
       // Signal: VehYaw_W_Actl
       // TODO: we should use the speed which results in the closest angle measurement to the desired angle
       float ford_yaw_rate = (((msg->data[2] << 8U) | msg->data[3]) * 0.0002) - 6.5;
@@ -149,6 +165,8 @@ static void ford_rx_hook(const CANPacket_t *msg) {
       aol_button_press = GET_BIT(msg, 40U) ? AOL_BUTTON_PRESSED : AOL_BUTTON_NOT_PRESSED;
     }
   }
+
+  ford_bp_rx_hook(msg);  // BluePilot: pinion angle_meas source
 }
 
 static bool ford_tx_hook(const CANPacket_t *msg) {
@@ -223,6 +241,8 @@ static bool ford_tx_hook(const CANPacket_t *msg) {
     if (action != 0U) {
       tx = false;
     }
+
+    ford_bp_lka_tx(msg);  // BluePilot: angle-mode state from the frame's unused bits
   }
 
   // Safety check for LateralMotionControl action
@@ -234,12 +254,17 @@ static bool ford_tx_hook(const CANPacket_t *msg) {
     unsigned int raw_path_angle = (msg->data[3] << 3) | (msg->data[4] >> 5);
     unsigned int raw_path_offset = (msg->data[5] << 2) | (msg->data[6] >> 6);
 
-    // These signals are not yet tested with the current safety limits
-    bool violation = (raw_curvature_rate != FORD_INACTIVE_CURVATURE_RATE) || (raw_path_angle != FORD_INACTIVE_PATH_ANGLE) || (raw_path_offset != FORD_INACTIVE_PATH_OFFSET);
+    bool violation = false;
+    if (ford_bp_lateral) {  // BluePilot: 4-signal lateral
+      violation = ford_bp_lmc_tx(false, raw_curvature, raw_curvature_rate, raw_path_offset, raw_path_angle, steer_control_enabled);
+    } else {
+      // These signals are not yet tested with the current safety limits
+      violation = (raw_curvature_rate != FORD_INACTIVE_CURVATURE_RATE) || (raw_path_angle != FORD_INACTIVE_PATH_ANGLE) || (raw_path_offset != FORD_INACTIVE_PATH_OFFSET);
 
-    // Check angle error and steer_control_enabled
-    int desired_curvature = raw_curvature - FORD_INACTIVE_CURVATURE;  // /FORD_STEERING_LIMITS.curvature_to_can to get real curvature
-    violation |= steer_native_curvature_cmd_checks(desired_curvature, steer_control_enabled, FORD_STEERING_LIMITS);
+      // Check angle error and steer_control_enabled
+      int desired_curvature = raw_curvature - FORD_INACTIVE_CURVATURE;  // /FORD_STEERING_LIMITS.curvature_to_can to get real curvature
+      violation |= steer_native_curvature_cmd_checks(desired_curvature, steer_control_enabled, FORD_STEERING_LIMITS);
+    }
 
     if (violation) {
       tx = false;
@@ -255,12 +280,17 @@ static bool ford_tx_hook(const CANPacket_t *msg) {
     unsigned int raw_path_angle = ((msg->data[3] & 0x1FU) << 6) | (msg->data[4] >> 2);
     unsigned int raw_path_offset = ((msg->data[4] & 0x3U) << 8) | msg->data[5];
 
-    // These signals are not yet tested with the current safety limits
-    bool violation = (raw_curvature_rate != FORD_CANFD_INACTIVE_CURVATURE_RATE) || (raw_path_angle != FORD_INACTIVE_PATH_ANGLE) || (raw_path_offset != FORD_INACTIVE_PATH_OFFSET);
+    bool violation = false;
+    if (ford_bp_lateral) {  // BluePilot: 4-signal lateral
+      violation = ford_bp_lmc_tx(true, raw_curvature, raw_curvature_rate, raw_path_offset, raw_path_angle, steer_control_enabled);
+    } else {
+      // These signals are not yet tested with the current safety limits
+      violation = (raw_curvature_rate != FORD_CANFD_INACTIVE_CURVATURE_RATE) || (raw_path_angle != FORD_INACTIVE_PATH_ANGLE) || (raw_path_offset != FORD_INACTIVE_PATH_OFFSET);
 
-    // Check angle error and steer_control_enabled
-    int desired_curvature = raw_curvature - FORD_INACTIVE_CURVATURE;  // /FORD_STEERING_LIMITS.curvature_to_can to get real curvature
-    violation |= steer_native_curvature_cmd_checks(desired_curvature, steer_control_enabled, FORD_STEERING_LIMITS);
+      // Check angle error and steer_control_enabled
+      int desired_curvature = raw_curvature - FORD_INACTIVE_CURVATURE;  // /FORD_STEERING_LIMITS.curvature_to_can to get real curvature
+      violation |= steer_native_curvature_cmd_checks(desired_curvature, steer_control_enabled, FORD_STEERING_LIMITS);
+    }
 
     if (violation) {
       tx = false;
@@ -285,6 +315,20 @@ static safety_config ford_init(uint16_t param) {
     {.msg = {{FORD_EngVehicleSpThrottle, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{FORD_DesiredTorqBrk, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{FORD_Steering_Data_FD1, 0, 8, 10U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
+  };
+
+  // BluePilot: ford_rx_checks plus the pinion message, enforced only while the pinion angle_meas source is
+  // on (ford_bp_init). Written out rather than shared through a macro: cppcheck's MISRA 5.8 check misreads one.
+  static RxCheck ford_rx_checks_pinion[] = {
+    {.msg = {{FORD_BrakeSysFeatures, 0, 8, 50U, .max_counter = 15U}, { 0 }, { 0 }}},
+    {.msg = {{FORD_EngVehicleSpThrottle2, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true}, { 0 }, { 0 }}},
+    {.msg = {{FORD_Yaw_Data_FD1, 0, 8, 100U, .max_counter = 255U}, { 0 }, { 0 }}},
+    {.msg = {{FORD_EngBrakeData, 0, 8, 10U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
+    {.msg = {{FORD_EngVehicleSpThrottle, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
+    {.msg = {{FORD_DesiredTorqBrk, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
+    {.msg = {{FORD_Steering_Data_FD1, 0, 8, 10U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
+    // StePinAn_No_Cs matches no Ford checksum pattern on real frames: integrity via counter (0-15) + quality flag + 100 Hz
+    {.msg = {{FORD_SteeringPinion_Data, 0, 8, 100U, .max_counter = 15U, .ignore_checksum = true}, { 0 }, { 0 }}},
   };
 
   #define FORD_COMMON_TX_MSGS \
@@ -330,6 +374,11 @@ static safety_config ford_init(uint16_t param) {
                               BUILD_SAFETY_CFG(ford_rx_checks, FORD_CANFD_STOCK_TX_MSGS);
   } else {
     ret = BUILD_SAFETY_CFG(ford_rx_checks, FORD_LONG_TX_MSGS);
+  }
+
+  // BluePilot: IQ safety flags (BP lateral, pinion source); the pinion RX check applies only when it is consumed
+  if (ford_bp_init(current_safety_param_iq)) {
+    SET_RX_CHECKS(ford_rx_checks_pinion, ret);
   }
   return ret;
 }

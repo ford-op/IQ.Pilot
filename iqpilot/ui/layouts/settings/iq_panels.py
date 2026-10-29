@@ -44,6 +44,7 @@ from iqpilot.selfdrive.ui.layouts.settings.device import DeviceLayout
 from iqpilot.selfdrive.ui.layouts.settings.software import SoftwareLayout
 from iqpilot.selfdrive.ui.layouts.settings.toggles import TogglesLayout
 from iqpilot.selfdrive.ui.lib.nnff_settings import nnff_availability
+from iqpilot.selfdrive.ui.lib import ford_lateral_settings as ford
 from iqpilot.selfdrive.ui.lib.turn_guard_settings import TURN_GUARDS_DESCRIPTION, turn_guards_availability
 from iqpilot.selfdrive.ui.ui_state import device, ui_state
 from iqpilot.system.hardware import HARDWARE
@@ -1492,7 +1493,63 @@ class VolkswagenSettings(BrandPanel):
     self.curvature_controller.set_visible(is_curvature_car)
     self.smooth_steer.set_visible(is_curvature_car)
 
+class FordSettings(BrandPanel):
+  """BluePilot lateral (iqdbc/bluepilot_lateral); the rows and their rules are in ford_lateral_settings."""
+  def __init__(self):
+    super().__init__()
+    ford.seed_unset_defaults(ui_state.params)
+
+    self.bp_lateral = toggle_item(
+      lambda: tr("BluePilot Lateral"),
+      description=lambda: tr("BluePilot's Ford lateral control: path offset, path angle, curvature and curvature rate, " +
+                             "with its own panda safety checks. Off sends the stock curvature-only command. " +
+                             "Applies the next time the car starts."),
+      initial_state=ford.bp_lateral_on(ui_state.params),
+      callback=lambda on: ford.set_bp_lateral(ui_state.params, on),
+      enabled=lambda: ui_state.is_offroad(),
+    )
+    self.primary_control = multiple_button_item(
+      lambda: tr("Primary Control"),
+      lambda: tr("Curvature steers with curvature, trimmed by path angle. Angle steers with path angle (in development)."),
+      buttons=[lambda: tr("Curvature"), lambda: tr("Angle")],
+      param="FordPrefLateralControl",
+      inline=False,
+    )
+    self.pinion = toggle_item(
+      lambda: tr("Use Pinion Yaw Sensor"),
+      description=lambda: tr("Measure the turn from the steering pinion angle instead of the RCM yaw sensor, for cars " +
+                             "whose yaw sensor is faulty (\"Turn Exceeds Steering Limit\" warnings, weak curve tracking, " +
+                             "\"Service AdvanceTrac\"). Applies the next time the car starts."),
+      param="FordPrefSteerAngleCurvature",
+      enabled=lambda: ui_state.is_offroad() and ford.bp_lateral_on(ui_state.params),
+    )
+    self._tuning = [(row, self._tuning_item(row)) for row in ford.TUNING_ROWS]
+    self.items = [self.bp_lateral, self.primary_control, self.pinion, *(item for _, item in self._tuning)]
+
+  @staticmethod
+  def _tuning_item(row: ford.FordRow):
+    def enabled(row=row):
+      return ford.row_enabled(row, ui_state.params)
+
+    if row.is_float:
+      lo, hi = row.range
+      return option_item(lambda row=row: tr(row.title), row.key, int(round(lo * 100)), int(round(hi * 100)),
+                         description=lambda row=row: tr(row.description), value_change_step=int(round(row.step * 100)),
+                         enabled=enabled, use_float_scaling=True)
+    return toggle_item(lambda row=row: tr(row.title), description=lambda row=row: tr(row.description),
+                       param=row.key, enabled=enabled)
+
+  def update_settings(self):
+    bp_on = ford.bp_lateral_on(ui_state.params)
+    self.bp_lateral.action_item.set_state(bp_on)
+    self.primary_control.action_item.set_enabled(bp_on and not ui_state.engaged)
+    self.pinion.set_visible(ford.pinion_supported(ui_state.params, ui_state.CP))
+    mode = ford.primary_control(ui_state.params)
+    for row, item in self._tuning:
+      item.set_visible(row.mode == mode)
+
 _REGISTRY: dict[str, type[BrandPanel]] = {
+  "ford": FordSettings,
   "subaru": SubaruSettings,
   "tesla": TeslaSettings,
   "toyota": ToyotaSettings,

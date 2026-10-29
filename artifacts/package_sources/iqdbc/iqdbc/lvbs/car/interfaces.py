@@ -8,6 +8,7 @@ from collections.abc import Callable
 
 from iqdbc.car import structs
 from iqdbc.car.can_definitions import CanRecvCallable, CanSendCallable
+from iqdbc.bluepilot_lateral.hosts.iqpilot.safety_param import init_ford_safety_param_iq  # BluePilot
 from iqdbc.car.subaru.values import SubaruFlags
 from iqdbc.car.tesla.values import LEGACY_CARS
 from iqdbc.lvbs.car.subaru.iq_values import SubaruFlagsIQ, SubaruSafetyFlagsIQ
@@ -80,6 +81,7 @@ def apply_iq_car_config(CI, CP: structs.CarParams, CP_IQ: structs.IQCarParams,
   _apply_tesla_options(CP, CP_IQ, params_dict)
   _apply_creep_assist(CP, CP_IQ, params_dict)
   _apply_toyota_options(CP, CP_IQ, params_dict)
+  init_ford_safety_param_iq(CP, CP_IQ, params_dict)  # BluePilot
 
 
 def _apply_long_tuning(CI, CP: structs.CarParams, CP_IQ: structs.IQCarParams,
