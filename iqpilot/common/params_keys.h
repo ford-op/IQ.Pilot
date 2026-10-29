@@ -565,7 +565,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
 
     // BluePilot lateral (bluepilot_lateral subtree): python -m iqdbc.bluepilot_lateral.params.manifest,
     // without BACKUP, which IQ.Pilot's params don't have
-    {"disable_BP_lat_UI", {PERSISTENT, BOOL, "0"}},
+    {"disable_BP_lat_UI", {PERSISTENT, BOOL, "1"}},  // BluePilot lateral off until the user turns it on
     {"enable_human_turn_detection_curv", {PERSISTENT, BOOL, "1"}},
     {"enable_lane_positioning_curv", {PERSISTENT, BOOL, "0"}},
     {"enable_lane_full_mode_curv", {PERSISTENT, BOOL, "0"}},

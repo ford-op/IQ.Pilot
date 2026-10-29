@@ -1499,11 +1499,13 @@ class FordSettings(BrandPanel):
     super().__init__()
     ford.seed_unset_defaults(ui_state.params)
 
-    self.bp_lateral_off = toggle_item(
-      lambda: tr("Disable BluePilot Lateral"),
-      description=lambda: tr("Send the stock curvature-only command instead of BluePilot's four path signals. " +
+    self.bp_lateral = toggle_item(
+      lambda: tr("BluePilot Lateral"),
+      description=lambda: tr("BluePilot's Ford lateral control: path offset, path angle, curvature and curvature rate, " +
+                             "with its own panda safety checks. Off sends the stock curvature-only command. " +
                              "Applies the next time the car starts."),
-      param="disable_BP_lat_UI",
+      initial_state=ford.bp_lateral_on(ui_state.params),
+      callback=lambda on: ford.set_bp_lateral(ui_state.params, on),
       enabled=lambda: ui_state.is_offroad(),
     )
     self.primary_control = multiple_button_item(
@@ -1522,7 +1524,7 @@ class FordSettings(BrandPanel):
       enabled=lambda: ui_state.is_offroad() and ford.bp_lateral_on(ui_state.params),
     )
     self._tuning = [(row, self._tuning_item(row)) for row in ford.TUNING_ROWS]
-    self.items = [self.bp_lateral_off, self.primary_control, self.pinion, *(item for _, item in self._tuning)]
+    self.items = [self.bp_lateral, self.primary_control, self.pinion, *(item for _, item in self._tuning)]
 
   @staticmethod
   def _tuning_item(row: ford.FordRow):
@@ -1538,7 +1540,9 @@ class FordSettings(BrandPanel):
                        param=row.key, enabled=enabled)
 
   def update_settings(self):
-    self.primary_control.action_item.set_enabled(ford.bp_lateral_on(ui_state.params) and not ui_state.engaged)
+    bp_on = ford.bp_lateral_on(ui_state.params)
+    self.bp_lateral.action_item.set_state(bp_on)
+    self.primary_control.action_item.set_enabled(bp_on and not ui_state.engaged)
     self.pinion.set_visible(ford.pinion_supported(ui_state.params, ui_state.CP))
     mode = ford.primary_control(ui_state.params)
     for row, item in self._tuning:

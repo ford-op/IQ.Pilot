@@ -98,7 +98,17 @@ def pinion_supported(params, cp) -> bool:
 
 
 def bp_lateral_on(params) -> bool:
-  return not params.get_bool("disable_BP_lat_UI")
+  """Read through the params_keys.h default (BluePilot lateral is off until a user turns it on), as car init and
+  controlsd do; get_bool would take an unset key as on."""
+  try:
+    disabled = params.get("disable_BP_lat_UI", return_default=True)
+  except UnknownKeyName:
+    return False
+  return disabled not in (True, 1, "1", b"1")
+
+
+def set_bp_lateral(params, on: bool) -> None:
+  params.put_bool("disable_BP_lat_UI", not on)
 
 
 def primary_control(params) -> int:

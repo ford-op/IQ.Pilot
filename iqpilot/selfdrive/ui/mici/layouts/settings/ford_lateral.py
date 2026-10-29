@@ -3,7 +3,7 @@
 Only the selected primary control mode's rows show; tap a value to pick a new one from its list."""
 from iqpilot.selfdrive.ui.lib import ford_lateral_settings as ford
 from iqpilot.selfdrive.ui.mici.widgets.dialog import BigMultiOptionDialog
-from iqpilot.selfdrive.ui.mici.widgets.stock_button import BigButton, BigParamControl
+from iqpilot.selfdrive.ui.mici.widgets.stock_button import BigButton, BigParamControl, BigToggle
 from iqpilot.selfdrive.ui.ui_state import ui_state
 from iqpilot.system.ui.lib.application import gui_app
 from iqpilot.system.ui.lib.multilang import tr
@@ -47,6 +47,17 @@ class FloatSetting(BigButton):
   def _apply(self, option: str):
     ui_state.params.put(self._row.key, float(option))
     self.refresh()
+
+
+class BluePilotLateralToggle(BigToggle):
+  """On / off for BluePilot lateral. Stored inverted, as disable_BP_lat_UI, and read through its params_keys.h
+  default (off), which BigParamControl's get_bool would miss."""
+  def __init__(self):
+    super().__init__(tr("BluePilot lateral"), initial_state=ford.bp_lateral_on(ui_state.params),
+                     toggle_callback=lambda on: ford.set_bp_lateral(ui_state.params, on))
+
+  def refresh(self):
+    self.set_checked(ford.bp_lateral_on(ui_state.params))
 
 
 class FordTuningButton(BigButton):
